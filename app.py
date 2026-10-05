@@ -234,7 +234,7 @@ def parse_malla(pdf_file):
 
 # --- INTERFAZ WEB STREAMLIT ---
 st.title("🎓 Extractor de Mallas y Pensums - UAA")
-st.write("Sube los PDFs del **Pensum** y la **Malla Curricular** para generar el JSON estructurado listo para la Base de Datos.")
+st.write("Sube los PDFs del **Pensum** y la **Malla Curricular** para generar el JSON estructurado listo para la Base de Datos.      designed by Mauro Silvero")
 
 col1, col2 = st.columns(2)
 
