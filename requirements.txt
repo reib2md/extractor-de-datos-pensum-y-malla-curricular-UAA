@@ -1,0 +1,2 @@
+streamlit==1.38.0
+pdfminer.six==20240706
