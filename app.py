@@ -1,8 +1,7 @@
 import streamlit as st
+import fitz  # PyMuPDF
 import re
 import json
-from pdfminer.high_level import extract_pages
-from pdfminer.layout import LTTextContainer
 
 # Configuración de la página en Streamlit
 st.set_page_config(
@@ -11,20 +10,34 @@ st.set_page_config(
     layout="wide"
 )
 
-def extract_rows_from_pdf(file_bytes):
-    """Extrae líneas de texto ordenadas por coordenadas Y (de arriba a abajo) y X (izquierda a derecha)"""
+def extract_rows_from_pdf(uploaded_file):
+    """
+    Extrae líneas de texto ordenadas por coordenadas Y (arriba a abajo) y X (izquierda a derecha)
+    utilizando PyMuPDF para evitar errores de referencias PDFObjRef corruptas.
+    """
+    # Leer los bytes del archivo cargado por Streamlit
+    pdf_bytes = uploaded_file.getvalue()
+    doc = fitz.open(stream=pdf_bytes, filetype="pdf")
+    
     all_pages_rows = []
-    for page_layout in extract_pages(file_bytes):
+    
+    for page in doc:
+        # Extraer estructura de texto con bboxes
+        page_dict = page.get_text("dict")
         items = []
-        for element in page_layout:
-            if isinstance(element, LTTextContainer):
-                for text_line in element:
-                    text = text_line.get_text().strip()
+        
+        for block in page_dict.get("blocks", []):
+            if "lines" in block:
+                for line in block["lines"]:
+                    bbox = line["bbox"]  # (x0, y0, x1, y1)
+                    # Unir los fragmentos de texto de la línea
+                    text = " ".join([span["text"] for span in line["spans"]]).strip()
                     if text:
-                        bbox = text_line.bbox
+                        # y0 representa la posición vertical superior en PyMuPDF
                         items.append({'y': bbox[1], 'x': bbox[0], 'text': text})
         
-        items.sort(key=lambda item: -item['y'])
+        # En PyMuPDF Y=0 está arriba, ordenamos de menor a mayor Y (de arriba a abajo)
+        items.sort(key=lambda item: item['y'])
         
         rows = []
         if not items:
@@ -32,6 +45,7 @@ def extract_rows_from_pdf(file_bytes):
             
         current_row = [items[0]]
         for item in items[1:]:
+            # Agrupar elementos en la misma línea (tolerancia de 4 puntos)
             if abs(item['y'] - current_row[0]['y']) <= 4.0:
                 current_row.append(item)
             else:
@@ -43,6 +57,8 @@ def extract_rows_from_pdf(file_bytes):
             rows.append(current_row)
             
         all_pages_rows.append(rows)
+        
+    doc.close()
     return all_pages_rows
 
 def parse_pensum(pdf_file):
@@ -62,20 +78,23 @@ def parse_pensum(pdf_file):
         for row in page:
             row_str = " ".join([it['text'] for it in row])
             
-            # Detectar Facultad y Carrera
+            # Detectar Facultad, Carrera y Promoción
             if "Facultad:" in row_str or "Facultad de" in row_str:
                 m_fac = re.search(r'Facultad:\s*([^|]+)', row_str) or re.search(r'Facultad de [^|]+', row_str)
-                if m_fac: facultad = m_fac.group(1 if 'Facultad:' in row_str else 0).strip()
+                if m_fac: 
+                    facultad = m_fac.group(1 if 'Facultad:' in row_str else 0).strip()
             if "Carrera:" in row_str:
                 m_car = re.search(r'Carrera:\s*([^|]+)', row_str)
                 if m_car and "Facultad" not in m_car.group(1):
                     carrera = m_car.group(1).split("Promoción")[0].strip()
             if "Promoción:" in row_str or "Promoción" in row_str:
                 m_prom = re.search(r'Promoción:\s*(\d+)', row_str) or re.search(r'Promoción\s*(\d+)', row_str)
-                if m_prom: promocion = int(m_prom.group(1))
+                if m_prom: 
+                    promocion = int(m_prom.group(1))
             if "Año Inicio:" in row_str:
                 m_anio = re.search(r'Año Inicio:\s*(\d{4})', row_str)
-                if m_anio: anio_inicio = int(m_anio.group(1))
+                if m_anio: 
+                    anio_inicio = int(m_anio.group(1))
 
             # Detectar Categorías y Subcategorías
             if "Materias de Formación General" in row_str:
